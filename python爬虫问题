@@ -1,0 +1,1303 @@
+# python爬虫
+
+基本概念：编写一段程序，我们把相关数据爬取下来的含义
+
+怎么使用呢？我们需要网络编程的基础，request实际上也是一个爬虫，理论基础在网络编程，可以见我的demo
+
+但是爬虫虽然方便，但是有一些网站为了安全会设置反爬虫机制。具体怎么操作，后面我们慢慢说。
+
+## 1. 网页的介绍
+
+这里是属于前端的知识，可以去看一下p3前端的内容，才进行了入门
+
+### 1.1 Chorme调试工具
+
+网页源代码爬取：在页面右键单击，在菜单里面找到显示网页源代码。前端的内容前端看叭。
+
+### 1.2 Elements
+
+调试工具：chorme检查：右键单击，点击检查，要换至element面板，里面全是html代码，可以看到里面的内容。
+
+### 1.3 DOM
+
+表示节点，前端知识。
+
+## 2. 静态网页爬虫基础
+
+我们以王者荣耀封面为例
+
+### 2.1 分析
+
+我们大致可以把爬虫逻辑分为四部分：
+
+1.人工查找承载信息的网站
+
+2.分析网页问题：静态 or 动态
+
+静态网页：服务端渲染出HTML返回给客户端
+
+动态网页：客户端（浏览器）通过JavaScript渲染出HTML
+
+3.使用网页解析器（正则表达式）进行分析
+
+4.提取需要信息。
+
+
+
+静态网页：发现网页里面内容可以在源代码里面找到的东西。
+
+首先开一个源码：
+
+```HTML
+<li rel="44587" rel2="1" style="display:none">
+  <a href="http://news.4399.com/gonglue/wzlm/yingxiong/ck/m/557118.html"
+    ><img
+      lz_src="http://newsimg.5054399.com/uploads/userup/1705/2615530535Z.jpg"
+      alt="王者荣耀红拂"
+    /><span>红拂</span></a
+  >
+  <div class="cf">
+    <a href="#" class="yxtxt-no" onclick="sm();return false;">英雄解析</a
+    ><a href="#" class="yxvideo-no" onclick="sm();return false;">英雄视频</a>
+  </div>
+</li>
+```
+
+很多英雄是包裹在同一个网页里面的
+
+我们需要详细分析
+
+他们包裹在同一个ul标签里面，里面全是英雄节点
+
+```HTML
+<ul class="rolelist cf" id="hreo_list">
+  <li>...鲁班大师...</li>
+  ...
+  <li>...红拂...</li>
+</ul>
+```
+
+### 2.2 静态网页爬虫实现
+
+思路：1.用requests库获取源码
+
+```python
+import requests
+response = requests.get('http://news.4399.com/gonglue/wzlm/yingxiong/')
+print(response.text)
+```
+
+我们发现里面有乱码，我们需要在网页编码方式里面找到编码方式：head里面找到第一行，前端里面有charset这个玩意，就是编码方式，复制过来。代码如下：
+
+```python
+import requests
+response = requests.get('http://news.4399.com/gonglue/wzlm/yingxiong/')
+response.encoding = 'gb2312'
+print(response.text)
+```
+
+2.获取相应区域的代码：
+
+我们在提取相应代码之前要采用正则表达式：
+
+先选出相应区域的代码，匹配正则表达式：
+
+```python
+r'<ul\sclass="rolelist\scf"\sid="hreo_list">([\s\S]*?)<\/ul>'`
+```
+
+为了控制不冗余，用非贪婪匹配即可
+
+代码如下：
+
+```python
+import requests
+import re
+response = requests.get('http://news.4399.com/gonglue/wzlm/yingxiong/')
+obj = re.search(r'<ul\sclass="rolelist\scf"\sid="hreo_list">([\s\S]*?)<\/ul>', response.text)
+print(obj.group(1)) # 使用group(1)提取第一个组内容
+```
+
+后面我们要分割内容，因为太烦了
+
+我们可以采用split()函数进行分割。在里面输入条件就可以分割了。
+
+我们现在来分割一下：
+
+```python
+import requests
+import re
+response = requests.get('http://news.4399.com/gonglue/wzlm/yingxiong/')
+response.encoding = 'gb2312'
+obj = re.search(r'<ul\sclass="rolelist\scf"\sid="hreo_list">([\s\S]*?)<\/ul>', response.text)
+heros = obj.group(1).split('</li>') # 根据</li>分割
+print(len(heros) - 1) # 打印英雄个数，最后一个</li>分割后会出现一个空，所以减1
+```
+
+因为最后一个元素分割无效，去除采用pop()函数。
+
+```python
+import requests
+import re
+response = requests.get('http://news.4399.com/gonglue/wzlm/yingxiong/')
+response.encoding = 'gb2312'
+obj = re.search(r'<ul\sclass="rolelist\scf"\sid="hreo_list">([\s\S]*?)<\/ul>',
+                response.text)
+heros = obj.group(1).split('</li>')  # 根据</li>分割
+heros.pop()
+for hero in heros:
+  banner = re.search(r'\slz_src="(.*?)"\s', hero)
+  name = re.search(r'<span>(.*?)</span>', hero)
+  # 我们不需要先存储results了，在这里直接下载即可
+  imgResult = requests.get(banner.group(1))
+  with open('imgs/{}.jpg'.format(name.group(1)), 'wb') as file:
+    print(name.group(1) + ' 下载完成！')
+    file.write(imgResult.content)
+```
+
+代码解释
+
+我们还是一如既往的获取图片内容。
+
+```python
+'imgs/{}.jpg'.format(name.group(1))
+```
+
+是一个字符串模板方法，用name.group(1)把内容填入大括号里面。
+
+## 3 Beautiful Soup问题
+
+由于正则表达式难度较大，其解析器对正则表达式有较高的要求。
+
+所以我们在这里引入Beautiful Soup来解决问题
+
+这是一个可以从HTML文档或者xml文件里面提取数据的python库，功能可以通过你喜欢的转换器实现文档导航，查找与修改
+
+我们还需要安装环境，具体安装线路见链接：https://beautifulsoup.readthedocs.io/zh_CN/v4.4.0/#id8
+
+我们有安装办法：
+
+```python
+pip install beautifulsoup4
+```
+
+使用方法如下：
+
+```python
+rom bs4 import BeautifulSoup # 1. 引入BeautifulSoup解析库
+
+html = """
+<html>
+  <head>
+    <title>优课达</title>
+  </head>
+  <body>
+    <a href="https://www.youkeda.com" alt="学得比别人好一点">优课达</a>
+    <ul>
+      <li><a href="https://www.youkeda.com">问吧</a></li>
+      <li><a href="https://www.youkeda.com/academy/java">研发学院</a></li>
+      <li><a href="https://www.youkeda.com/academy/python/P2">Python学院</a></li>
+      <li><a href="https://www.youkeda.com/app">APP下载</a></li>
+    </ul>
+  </body>
+</html>
+"""
+
+# 2. 用html.parser的规则解析html
+result = BeautifulSoup(html, 'html.parser')
+
+# 3. 打印网页的title
+print(result.title)
+```
+
+分部执行方法：1. 引用公共库
+
+​                           2.使用其解析器进行解析
+
+​                           3.再打印你所需要的信息，解析出来的结果.内容 
+
+获取里面内容，不想要标签怎么办？
+
+用get_text()方法进行操作。
+
+这个方法获取到tag中包含的所有文版内容包括子孙tag中的内容,并将结果作为Unicode字符串返回:
+
+```python
+markup = '<a href="http://example.com/">\nI linked to <i>example.com</i>\n</a>'
+soup = BeautifulSoup(markup)
+
+soup.get_text()
+u'\nI linked to example.com\n'
+soup.i.get_text()
+u'example.com'
+```
+
+看了文档发现会很烦，我们具体实例看看：
+
+```python
+result = BeautifulSoup(html, 'html.parser')
+print(result.title.get_text())
+```
+
+这样直接加这个方法就好了
+
+如果你想获得第一个标签，就soup.body.a或soup.a
+
+要想获取多个，就要soup.find_all(标签名)
+
+如果要解析HTML里面的属性，就要用标签名加中括号[属性名]方法，操作方法与字典一模一样
+
+### 3.1 find_all方法
+
+我们重点是查询、筛选、获取信息
+
+本节方法主要是查询所有节点
+
+#### 3.1.1 案例1：查询所有a标签
+
+```python
+from bs4 import BeautifulSoup
+
+html = """
+<html>
+  <head>
+    <title>优课达</title>
+  </head>
+  <body>
+    <a href="https://www.youkeda.com" alt="学得比别人好一点">优课达</a>
+    <ul>
+      <li><a href="https://www.youkeda.com">问吧</a></li>
+      <li class="info"><a href="https://www.youkeda.com/academy/java">研发学院</a></li>
+      <li class="info"><a href="https://www.youkeda.com/academy/python/P2">Python学院</a></li>
+      <li class="info last"><a class="download" href="https://www.youkeda.com/app">APP下载</a></li>
+    </ul>
+  </body>
+</html>
+"""
+result = BeautifulSoup(html, 'html.parser')
+
+# 查询所有的a标签
+aList = result.find_all('a')
+print(aList)
+```
+
+这个会帮助我们查找所有的a标签，帮助我们查找，最终返回的是一个列表
+
+#### 3.1.2 查询为info的li标签
+
+```python
+# 省略前面相同的代码
+……
+
+# 查询所有class为info的li标签
+liList = result.find_all('li', 'info')
+print(liList)
+```
+
+前一个参数是标签名，后一个参数是属性。
+
+#### 3.1.3 查询href为xxx的标签
+
+```python
+# 省略前面相同的代码
+……
+
+# 查询所有的href为https://www.youkeda.com的a标签
+aList = result.find_all('a', href='https://www.youkeda.com')
+print(aList)
+```
+
+参数1是标签名，参数二是链接
+
+#### 3.1.4 嵌套查询
+
+**查询所有的 class 为 "info" 的 li 标签，并且查询 li 标签内部 class 为 download 的 a 元素的文字内容**
+
+首先我们先查询class为info的li标签
+
+```python
+liList = result.find_all('li', 'info')
+```
+
+如何进行第二步呢？
+
+再一次在筛选的结果里面再一次遍历
+
+```python
+liList = result.find_all('li', 'info')
+# 查询到的结果是一个列表，可以遍历
+for li in liList:
+  # 每个元素可以继续在此基础上进行查询
+  temp = li.find_all('a', 'download')
+
+  # 并不一定会有结果，需要判断查询到的个数是否为空
+  if len(temp) > 0:
+    print(temp[0].get_text())
+```
+
+由于查询结果是一个列表，所以可以遍历
+
+### 3.2 select()
+
+这个方法是通过css选择器来进行的，这个是前端内容，前端可以看笔记哦。当然我们也不需要精通前端，我们可以看开发者选项
+
+怎么查看？
+
+我们可以把相关部分写在html文件里面，然后用chorme浏览器打开，Copy > Copy Selector，会得到
+
+```
+body > ul > li.info.last > a
+```
+
+这个关系表示继承关系，.表示class名称
+
+li.info.last意思是取class为info和last的li元素
+
+要想更深一步了解，可以参考：https://developer.mozilla.org/zh-CN/docs/Web/CSS/CSS_Selectors
+
+使用方法：
+
+```python
+# 省略前面代码
+……
+# 根据selectors筛选
+aApps = result.select('body > ul > li.info.last > a.download')
+for item in aApps:
+  print(item.get_text())
+```
+
+你会发现代码更加简洁相对于嵌套查询，select返回的是列表，可以遍历
+
+### 3.3 综合案例
+
+我们在上一节用王者荣耀案例进行分析了，现在我需要进行优化，代码如下：
+
+```python
+import requests
+from bs4 import BeautifulSoup
+response = requests.get('http://news.4399.com/gonglue/wzlm/yingxiong/')
+response.encoding = 'gb2312'
+
+result = BeautifulSoup(response.text, 'html.parser')
+
+# 第一步筛选英雄列表下面的li
+heroliList = result.select('ul.rolelist.cf > li')
+for heroli in heroliList:
+
+  # 查找唯一一个img 和 span
+  img = heroli.img
+  name = heroli.span
+
+  print('{}-{}'.format(name.get_text(), img['lz_src']);
+```
+
+首先我们这样可以不怎么用正则表达式进行了
+
+补充前端知识：通用选择器：*+内容，相当于选择所有元素
+
+​                           类型选择器：直接类名即可，input匹配的任何input元素
+
+​                           类选择器：.类名，class属性匹元素
+
+​                           ID选择器：#idname，id属性匹配元素
+
+​                           属性选择器[属性名字]，选择所有该属性所有元素
+
+## 4 豆瓣综合案例
+
+首先我们看网址：
+
+```
+第一页：https://book.douban.com/top250?start=0
+第二页：https://book.douban.com/top250?start=25
+第三页：https://book.douban.com/top250?start=50
+```
+
+他们前面一模一样，后面start不一样，代表
+
+```
+第一页的数据是0开始到24结束
+第二页的数据是25开始到49结束
+第三页的数据是50开始到75结束
+```
+
+怎么获取呢？
+
+我们还是一如既往的查找
+
+```python
+import requests
+from bs4 import BeautifulSoup
+
+response = requests.get('https://book.douban.com/top250?start=0')
+
+# 同样我们可以根据meta charset获取到页面的编码方式
+response.encoding = 'utf-8'
+
+print(response)
+print(response.text)
+```
+
+你会发现打不开，是因为这个网页有防爬功能，为了可以正常爬取，我们要进行user_agent设置
+
+```python
+import requests
+from bs4 import BeautifulSoup
+
+user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.108 Safari/537.36'
+response = requests.get('https://book.douban.com/top250?start=0', headers={'User-Agent': user_agent})
+
+# 同样我们可以根据 meta charset 获取到页面的编码方式
+response.encoding = 'utf-8'
+
+print(response)
+print(response.text)
+```
+
+这样就正常了
+
+user-agent找法：在开发者工具里面network里面点击查找
+
+获得第几个table：
+
+```python
+'#content > div > div.article > div > table:nth-child(2)'
+```
+
+这里是获取第二个table
+
+要想获得全部table，就要：
+
+```python
+'#content > div > div.article > div > table'
+```
+
+我们综合打一下：
+
+```python
+import requests
+from bs4 import BeautifulSoup
+
+user_agent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.108 Safari/537.36'
+response = requests.get(
+    'https://book.douban.com/top250?start=0',
+    headers={'User-Agent': user_agent})
+
+# 同样我们可以根据 meta charset 获取到页面的编码方式
+response.encoding = 'utf-8'
+
+result = BeautifulSoup(response.text, 'html.parser')
+books = result.select('#content > div > div.article > div > table')
+print(len(books))
+```
+
+若想获取图书名称：
+
+就要在开发者选项里面看到他的对应状态
+
+```python
+'#content > div > div.article > div > table:nth-child(2) > tbody > tr > td:nth-child(2) > div.pl2 > a'
+```
+
+当然，我们也可以采用相对路径
+
+```python
+'tr > td:nth-child(2) > div.pl2 > a'
+```
+
+相应代码如下：
+
+```python
+#...忽略上面重复的代码
+
+result = BeautifulSoup(response.text, 'html.parser')
+books = result.select('#content > div > div.article > div > table')
+for book in books:
+  nameDoms = book.select('tr > td:nth-child(2) > div.pl2 > a')
+  name = ''
+  if len(nameDoms) > 0:
+    name = nameDoms[0].get_text()
+
+  rawNameDoms = book.select('tr > td:nth-child(2) > div.pl2 > span')
+  rawName = ''
+  if len(rawNameDoms) > 0:
+    rawName = rawNameDoms[0].get_text()
+
+  authorDoms = book.select('tr > td:nth-child(2) > p.pl')
+  author = ''
+  if len(authorDoms) > 0:
+    author = authorDoms[0].get_text()
+
+  print('{} {} {}'.format(name, rawName, author))
+```
+
+我们发现有很多空白，处理办法：
+
+```python
+import re
+
+def removeWhite(content):
+  content = re.sub(r'\s', '', content)
+  return content
+```
+
+结果如下：
+
+```python
+import requests
+from bs4 import BeautifulSoup
+import re
+
+def removeWhite(content):
+  content = re.sub(r'\s', '', content)
+  return content
+  
+user_agent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.108 Safari/537.36'
+response = requests.get(
+    'https://book.douban.com/top250?start=0',
+    headers={'User-Agent': user_agent})
+
+# 同样我们可以根据 meta charset 获取到页面的编码方式
+response.encoding = 'utf-8'
+
+result = BeautifulSoup(response.text, 'html.parser')
+books = result.select('#content > div > div.article > div > table')
+for book in books:
+  nameDoms = book.select('tr > td:nth-child(2) > div.pl2 > a')
+  name = ''
+  if len(nameDoms) > 0:
+    name = nameDoms[0].get_text()
+
+  rawNameDoms = book.select('tr > td:nth-child(2) > div.pl2 > span')
+  rawName = ''
+  if len(rawNameDoms) > 0:
+    rawName = rawNameDoms[0].get_text()
+
+  authorDoms = book.select('tr > td:nth-child(2) > p.pl')
+  author = ''
+  if len(authorDoms) > 0:
+    author = authorDoms[0].get_text()
+
+  print('{} {} {}'.format(removeWhite(name), removeWhite(rawName), removeWhite(author)))
+```
+
+我们进一步优化
+
+```python
+authorDoms = book.select('tr > td:nth-child(2) > p.pl')
+  author = ''
+  if len(authorDoms) > 0:
+    author = authorDoms[0].get_text()
+    # 下面是处理方法
+    author = author.split('/')[0]
+```
+
+但是你发现，我们要获取多个信息，就要进行循环遍历，可见我们循环遍历充满困难。所以，我们把爬取过程抽象一个方法：
+
+```python
+import requests
+from bs4 import BeautifulSoup
+import re
+
+
+def replaceContent(content):
+  content = re.sub(r'\s', '', content)
+  return content
+
+
+# 处理一个startSpider方法，并且接收一个url作为网页地址
+def startSpider(url):
+  user_agent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.108 Safari/537.36'
+  response = requests.get(url, headers={'User-Agent': user_agent})
+
+  # 同样我们可以根据 meta charset 获取到页面的编码方式
+  response.encoding = 'utf-8'
+
+  result = BeautifulSoup(response.text, 'html.parser')
+  books = result.select('#content > div > div.article > div > table')
+  for book in books:
+    nameDoms = book.select('tr > td:nth-child(2) > div.pl2 > a')
+    name = ''
+    if len(nameDoms) > 0:
+      name = nameDoms[0].get_text()
+
+    rawNameDoms = book.select('tr > td:nth-child(2) > div.pl2 > span')
+    rawName = ''
+    if len(rawNameDoms) > 0:
+      rawName = rawNameDoms[0].get_text()
+
+    authorDoms = book.select('tr > td:nth-child(2) > p.pl')
+    author = ''
+    if len(authorDoms) > 0:
+      author = authorDoms[0].get_text()
+      author = author.split('/')[0]
+
+    print('{} {} {}'.format(
+        replaceContent(name), replaceContent(rawName), replaceContent(author)))
+
+# 通过函数调用的方式启动爬虫
+startSpider('https://book.douban.com/top250?start=0')
+```
+
+再加上for循环：
+
+```python
+for i in range(10):
+  startSpider('https://book.douban.com/top250?start={}'.format(i * 25))
+```
+
+总结：我们爬取的过程如下：
+
+先确定要爬取的部分
+
+找到对应代码区域
+
+我们要抽离函数进行解析
+
+解析后进行遍历
+
+解析步骤：先找到网页进行分析请求，要找到user-agent和网址
+
+​                  再使用beautiful soup进行解析
+
+​                  然后再使用相关查找方法进行提取，找到其信息点
+
+​                 最后进行格式处理就可以了
+
+```python
+import requests
+from bs4 import BeautifulSoup
+import re
+
+def getBill(film):
+  billDoms = film.select('div.pic > a > img')
+  if len(billDoms) > 0:
+    return billDoms[0].attrs['src']
+  return ''
+
+def getNames(film):
+  nameBoxDom = film.select('div.info > div.hd > a')[0]
+
+  # 查询到所有的名称DOM
+  nameDoms = nameBoxDom.find_all("span")
+  names = []
+  for nameDom in nameDoms:
+    # 将奇怪字符串替换掉
+    name = re.sub('\xa0', '', nameDom.get_text())
+
+    # 得到的名称可能本身还包含多个名称，使用 '/' 分割
+    if name.find('/') != -1:
+      tempNames = name.split('/')
+      for tempName in tempNames:
+
+        # 去除左右的空格
+        tempName = tempName.strip()
+        if tempName != '':
+          names.append(tempName)
+    else:
+      names.append(name)
+  return names
+
+
+# 获取导演，年份，类别，地区信息
+def getOtherInfo(film):
+  infoDom = film.select('div.info > div.bd > p:nth-child(1)')[0]
+  info = infoDom.get_text().strip()
+  temps = info.split('\n')
+
+  # temp[0] 是导演和主演信息，先找到主演的位置，然后用字符串分割出导演内容
+  endIndex = temps[0].find('主演:')
+  director = temps[0][3:endIndex].strip()
+
+  # temp[1] 包含的年份，类别，地区信息
+  others = temps[1].split('/')
+  year = others[0].strip()
+
+  # areas types 为数组形式，需要用空格分割原始字符串
+  areas = others[1].strip().split(' ')
+  types = others[2].strip().split(' ')
+
+  return (director, year, areas, types)
+
+
+# 获取评分
+def getRate(film):
+  return film.select('div.info > div.bd > div > span.rating_num')[0].get_text()
+
+
+resultFilms = []
+
+
+def startSpider(url):
+  user_agent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.108 Safari/537.36'
+  response = requests.get(url, headers={'User-Agent': user_agent})
+
+  # 同样我们可以根据 meta charset 获取到页面的编码方式
+  response.encoding = 'utf-8'
+
+  result = BeautifulSoup(response.text, 'html.parser')
+  films = result.select('#content > div > div.article > ol > li')
+  for film in films:
+    bill = getBill(film)
+    names = getNames(film)
+    (director, year, areas, types) = getOtherInfo(film)
+    rate = getRate(film)
+    resultFilms.append({
+        'names': names,
+        'bill': bill,
+        'director': director,
+        'year': year,
+        'areas': areas,
+        'types': types,
+        'rate': rate
+    })
+
+
+for i in range(10):
+  startSpider('https://movie.douban.com/top250?start={}'.format(i * 25))
+
+print(resultFilms)
+    
+```
+
+补充知识：字符串替换：
+
+```python
+content = 'abc'
+content = re.sub('a', '', content)
+print(content) # 结果为 'bc'，也就是把'a'这个字符串替换为空
+```
+
+左右空格去除：
+
+```python
+content = ' The Shawshank Redemption '
+print(content.strip()) # 结果将会是 'The Shawshank Redemption'
+```
+
+strip()方法
+
+字符串包含：find()函数
+
+```python
+content1 = '月黑高飞(港)  /  刺激1995(台)'
+index1 = content1.find('/')
+print(index1)  # 结果为9， 表示'/'在字符串中的下标位置
+
+content2 = '肖生克的救赎'
+index2 = content2.find('/')
+print(index2) # 结果为 -1, 表示未找到
+```
+
+-1表示未找到
+
+## 5 动态网页
+
+数据有浏览器渲染出来，由JavaScript发起请求，通过浏览器渲染出来，在chorme的network里面渲染出来
+
+### 5.1 寻找network
+
+我们在preview里面可以查看返回数据，可以得到请求地址，Header》general》request url
+
+### 5.2 API
+
+我们找到api以后，发现里面东西很长，很烦人。
+
+```
+https://www.zhihu.com/api/v4/questions/341554416/answers?include=data%5B%2A%5D.is_normal%2Cadmin_closed_comment%2Creward_info%2Cis_collapsed%2Cannotation_action%2Cannotation_detail%2Ccollapse_reason%2Cis_sticky%2Ccollapsed_by%2Csuggest_edit%2Ccomment_count%2Ccan_comment%2Ccontent%2Ceditable_content%2Cvoteup_count%2Creshipment_settings%2Ccomment_permission%2Ccreated_time%2Cupdated_time%2Creview_info%2Crelevant_info%2Cquestion%2Cexcerpt%2Crelationship.is_authorized%2Cis_author%2Cvoting%2Cis_thanked%2Cis_nothelp%2Cis_labeled%2Cis_recognized%2Cpaid_info%2Cpaid_info_content%3Bdata%5B%2A%5D.mark_infos%5B%2A%5D.url%3Bdata%5B%2A%5D.author.follower_count%2Cbadge%5B%2A%5D.topics&limit=5&offset=5&platform=desktop&sort_by=default
+```
+
+协议一大堆，我们慢慢看
+
+首先我们先看看接口地址：
+
+```
+https://www.zhihu.com/api/v4/questions/341554416/answers
+```
+
+参数如下：
+
+include后面一大串，我们不看
+
+limit（这个打五星）：5 表示每页5个
+
+offset（这个打五星）：5 偏移量
+
+plate：desktop 平台
+
+sort_by: default 排序规则
+
+offset是从第几条开始的数据
+
+```python
+import requests
+user_agent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.108 Safari/537.36'
+
+
+def start(offset=0, limit=20):
+  result = requests.get(
+      url='https://www.zhihu.com/api/v4/questions/341554416/answers?include=data%5B%2A%5D.is_normal%2Cadmin_closed_comment%2Creward_info%2Cis_collapsed%2Cannotation_action%2Cannotation_detail%2Ccollapse_reason%2Cis_sticky%2Ccollapsed_by%2Csuggest_edit%2Ccomment_count%2Ccan_comment%2Ccontent%2Ceditable_content%2Cvoteup_count%2Creshipment_settings%2Ccomment_permission%2Ccreated_time%2Cupdated_time%2Creview_info%2Crelevant_info%2Cquestion%2Cexcerpt%2Crelationship.is_authorized%2Cis_author%2Cvoting%2Cis_thanked%2Cis_nothelp%2Cis_labeled%2Cis_recognized%2Cpaid_info%2Cpaid_info_content%3Bdata%5B%2A%5D.mark_infos%5B%2A%5D.url%3Bdata%5B%2A%5D.author.follower_count%2Cbadge%5B%2A%5D.topics&limit={}&offset={}&platform=desktop&sort_by=default'
+      .format(20, offset),
+      headers={'User-Agent': user_agent})
+  data = result.json()['data']
+  for answer in data:
+    text = answer['content']
+    author = answer['author']['name']
+    print(author)
+
+start()
+
+```
+
+20可以换成offset
+
+解析其中元素：
+
+```python
+import requests
+from bs4 import BeautifulSoup
+import re
+
+user_agent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.108 Safari/537.36'
+
+def getTotal(id):
+  result = requests.get(url='https://www.zhihu.com/question/{}'.format(id), headers={'User-Agent': user_agent})
+  soup = BeautifulSoup(result.text, "html.parser")
+  totalDom = soup.find(class_='List-headerText')
+  totalText = totalDom.select('span')[0].text
+  # 解析获取这个数字，并转换成int类型
+  total = int(re.split('\s', totalText)[0].replace(',', ''))
+  return total
+
+def start(id, offset = 0, limit = 20):
+  print('--------------' + str(offset))
+  result = requests.get(url='https://www.zhihu.com/api/v4/questions/{}/answers?include=data%5B%2A%5D.is_normal%2Cadmin_closed_comment%2Creward_info%2Cis_collapsed%2Cannotation_action%2Cannotation_detail%2Ccollapse_reason%2Cis_sticky%2Ccollapsed_by%2Csuggest_edit%2Ccomment_count%2Ccan_comment%2Ccontent%2Ceditable_content%2Cvoteup_count%2Creshipment_settings%2Ccomment_permission%2Ccreated_time%2Cupdated_time%2Creview_info%2Crelevant_info%2Cquestion%2Cexcerpt%2Crelationship.is_authorized%2Cis_author%2Cvoting%2Cis_thanked%2Cis_nothelp%2Cis_labeled%2Cis_recognized%2Cpaid_info%2Cpaid_info_content%3Bdata%5B%2A%5D.mark_infos%5B%2A%5D.url%3Bdata%5B%2A%5D.author.follower_count%2Cbadge%5B%2A%5D.topics&limit={}&offset={}&platform=desktop&sort_by=default'.format(id, 20, offset), headers={'User-Agent': user_agent})
+  data = result.json()['data']
+  for answer in data:
+    # 通过字典获取到需要的字段
+    text = answer['content']
+    author = answer['author']['name']
+    print(author)
+
+id = '341554416'
+total = getTotal(id)
+for offset in range(0, total, 20):
+  start(id, offset, 20)
+```
+
+原理：在api里面找到相应字段进行爬取即可
+
+post接口参数：在request playload里面找
+
+上面这段代码你们肯定看的头大
+
+所以我拿一个例子来解释
+
+```python
+import requests
+from bs4 import BeautifulSoup
+import re
+
+user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.108 Safari/537.36'
+header = {'User-Agent':user_agent}
+url = 'https://movie.douban.com/j/search_subjects?type=movie&tag=%E7%83%AD%E9%97%A8&page_limit=50&page_start=0'
+movies = []
+
+def start():
+  result = requests.get(url,headers=header)
+  subjects = result.json()['subjects']
+  for subject in subjects:
+    movies.append({
+      'bill':subject['url'],
+      'name':subject['title'],
+      'rate':subject['rate']
+    })
+    
+start()
+print(movies)
+```
+
+json里面可以直接get到数据，注意查看preview里面所要的路径来get相关的数据，我们可以减少beautiful soup的调用来管理
+
+我们再看一个复杂的案例：
+
+```python
+import requests
+
+user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.116 Safari/537.36'
+header = {'User-Agent':user_agent,'X-Agent':'Juejin/Web'}
+articles = []
+url = 'https://web-api.juejin.im/query'
+
+def start(after):
+  data = {
+      "operationName": "",
+      "query": "",
+      "variables": {
+          "first": 100,
+          "after": after,
+          "order": "POPULAR"
+      },
+      "extensions": {
+          "query": {
+              "id": "21207e9ddb1de777adeaca7a2fb38030"
+          }
+      }
+  }
+  print('-------------' + after)
+  result = requests.post(
+      "https://web-api.juejin.im/query",
+      json=data,
+      headers={
+          'User-Agent': user_agent,
+          'X-Agent': 'Juejin/Web'
+      })
+  edges = result.json()['data']['articleFeed']['items']['edges']
+  pageInfo = result.json()['data']['articleFeed']['items']['pageInfo']
+
+  for edge in edges:
+    articles.append(edge['node']['title'])
+  return pageInfo['endCursor']
+  
+  after = ""
+  for i in range(1,6):
+    after=start(after)
+  print(articles)
+```
+
+掘金爬取，post，我们需要json来传data，在request playload里面
+
+header请求：我们爬取过程里面
+
+会遇到爬不到的问题，会有拦截，找到相应agent进行解决
+
+再同上找到preview来找相应数据
+
+## 6 pyppeteer
+
+新爬虫神器，是一个自动化测试工具，来源于puppeteer
+
+puppeteer：是谷歌chorme 团队官方的无界面工具。，是一个node库
+
+可以完全模拟人操作浏览器行为，我们还是要安装相关
+
+```
+python3 install pyppeteer
+```
+
+我们看看案例：
+
+### 6.1 网页截图案例：
+
+```python
+from pyppeteer import launch
+import asyncio
+
+async def spider():
+  # 1. 启动一个浏览器
+  browser = await launch({'args': ['--no-sandbox', '--disable-setuid-sandbox'})
+  # 2. 新开浏览器的一个网页标签页
+  page = await browser.newPage()
+  # 3. 在新开的网页标签页中输入掘金地址
+  await page.goto('https://www.juejin.im')
+  # 4. 输入地址以后，等待2秒钟，等待页面渲染完成
+  await page.waitFor(2000)
+  # 5. 截图，截图地址为juejin.png
+  await page.screenshot({'path': 'juejin.png'})
+  # 6. 关闭浏览器
+  await browser.close()
+
+
+asyncio.get_event_loop().run_until_complete(spider())
+```
+
+async/await：python协程，解决异步回调问题
+
+```python
+# 此处的 await 意思是阻塞在此处，直到launch成功再继续往下面执行
+browser = await launch({'args': ['--no-sandbox', '--disable-setuid-sandbox'})
+
+# 此处的 await 意思是阻塞在此处，直到浏览器打开新标签再继续
+page = await browser.newPage()
+```
+
+await里面都有耗时操作，目的是等待这个操作完成，继续往下执行。
+
+所有带await里面的东西，必须放在async上面进行
+
+要调用这个方法，要调用asyncio库：
+
+```python
+asyncio.get_event_loop().run_until_complete(spider())
+```
+
+其他方法：goto()到访问某个网页
+
+​                   waitFor(miliseconds)等待多少毫秒
+
+​                   screenshot({'path':xxx})截图保存xxx
+
+​                  
+
+### 6.2 生成PDF
+
+把后面screenshot变成
+
+```python
+await page.pdf({'path': 'juejin.pdf'})
+```
+
+环境安装:https://blog.csdn.net/weixin_40844416/article/details/80889165
+
+### 6.3 获取页面信息
+
+方法：querySelector(selector:str)用路径访问方法进行查询第一个满足的元素
+
+querySelectorAll()查询所有满足selector元素
+
+案例：
+
+```python
+from pyppeteer import launch
+import asyncio
+
+async def spider():
+  # 1. 启动一个浏览器
+  browser = await launch({'args': ['--no-sandbox', '--disable-setuid-sandbox']})
+  # 2. 新开浏览器的一个网页标签页
+  page = await browser.newPage()
+  # 3. 在新开的网页标签页中输入掘金地址
+  await page.goto('https://www.juejin.im')
+
+  # 4. await page.waitFor(2000) 用页面中某个元素显示作为判断条件
+  await page.waitForSelector('ul.entry-list')
+  # 5. 查询到某个DOM节点
+  result = await page.querySelector(
+      '#juejin main div.feed.welcome__feed li div.info-row.title-row > a')
+  # 6. 获取这个节点的内容对象
+  domText = await result.getProperty('innerText')
+  # 7. 内容需要通过jsonValue()提取出来
+  title = await domText.jsonValue()
+  print(title)
+  await browser.close()
+
+
+asyncio.get_event_loop().run_until_complete(spider())
+```
+
+其中代码waitForSelector()我们要渲染页面会有不完全，乱码，所以这个方法就可以渲染那个节点东西
+
+getProperty()获取节点里面对象
+
+最后用jsonValue()是返回那个里面节点值
+
+返回所有元素：
+
+```python
+from pyppeteer import launch
+import asyncio
+
+async def spider():
+  # 1. 启动一个浏览器
+  browser = await launch({'args': ['--no-sandbox', '--disable-setuid-sandbox']})
+  # 2. 新开浏览器的一个网页标签页
+  page = await browser.newPage()
+  # 3. 在新开的网页标签页中输入掘金地址
+  await page.goto('https://www.juejin.im')
+
+  # 4. await page.waitFor(2000) 用页面中某个元素显示作为判断条件
+  await page.waitForSelector('ul.entry-list')
+  # 5. 查询到某个DOM节点
+  result = await page.querySelectorAll(
+      '#juejin main div.feed.welcome__feed li div.info-row.title-row > a')
+  for item in result:
+    # 6. 获取这个节点的内容对象
+    domText = await item.getProperty('innerText')
+    # 7. 内容需要通过jsonValue()提取出来
+    title = await domText.jsonValue()
+    print(title)
+  await browser.close()
+
+
+asyncio.get_event_loop().run_until_complete(spider())
+```
+
+JS提取方法：
+
+```python
+result = await page.evaluate(
+  """
+  () => {
+    // 通过JS自带的查询
+    const doms = document.querySelectorAll("#juejin main div.feed.welcome__feed li div.info-row.title-row > a")
+    const result = [];
+    // 遍历doms
+    for(let i = 0; i < doms.length; i++){
+      result.push(doms[i].innerText)
+    }
+    return result;
+  }
+  """
+)
+```
+
+使用JavaScript方法进行遍历
+
+### 6.4 更多方法
+
+```python
+async def spider():
+  # 1. 启动一个浏览器
+  browser = await launch({'args': ['--no-sandbox', '--disable-setuid-sandbox']})
+  # 2. 新开浏览器的一个网页标签页
+  page = await browser.newPage()
+  # 3. 在新开的网页标签页中输入掘金地址
+  await page.goto('https://www.juejin.im')
+
+  # 4. 点击登录按钮
+  await page.click('span.login')
+  # 5. 等待中间登录弹框出现
+  await page.waitForSeletor('.auth-modal-box')
+  # 6. 让loginPhoneOrEmail输入框获取焦点，此处使用的Selector的属性选择器
+  await page.focus('input[name="loginPhoneOrEmail"]')
+  # 7. 输入账号
+  await page.keyboard.type('XXX', {'delay': 100})
+  # 8. 让loginPassword获取焦点
+  await page.focus('input[name="loginPassword"]')
+  # 9. 输入密码
+  await page.keyboard.type('XXX', {'delay': 100})
+  # 10. 点击登录按钮
+  await page.click('.auth-form .btn')
+  await browser.close()
+```
+
+await page.click('span.login') 表示点击
+
+支持属性选择：await page.focus('input[name="loginPassword"]')
+
+ await page.keyboard.type('XXX', {'delay': 100})再每次输入后延迟100ms
+
+动态显示：
+
+```python
+browser = await launch({
+    'headless': False,
+    'slowMo': 10, # 为了让过程更加明显，我们配置slowMo让每一步操作延迟10ms
+    'args': ['--no-sandbox', '--disable-setuid-sandbox']
+  })
+```
+
+### 6.5 滚动分页
+
+调用js代码async可以这么做：
+
+```JavaScript
+async () => {
+  await new Promise((resolve, reject) => {
+    // 1. 定义最大滚动高度，如果是0则表示无线滚动
+    let maxHeight = 50000;
+
+    // 2. 记录上一次scrollHeight，便于判断此次下拉操作有没有成功，从而提前结束下拉
+    let scrollHeight = 0;
+    // 3. maxTries : 有时候无法下拉可能是网速的原因
+    let maxTries = 20;
+    let tried = 0;
+
+    // 4. 每隔100ms调用一次滚动，滚动到最底部
+    var timer = setInterval(function() {
+      // 5. 滚动以后高度没变化，无法再滚动，并且重试的次数已经超过maxTries
+      if (document.body.scrollHeight === scrollHeight) {
+        tried += 1;
+        if (tried >= maxTries) {
+          console.log('已经达到底部!');
+          clearInterval(timer);
+          resolve();
+        } else {
+          console.log('重试：' + tried);
+        }
+      } else {
+        tried = 0;
+      }
+
+      // 6. 促使页面滚动
+      scrollHeight = document.body.scrollHeight;
+      console.log('滚动距离：' + scrollHeight);
+      window.scrollBy(0, scrollHeight);
+      window.scrollBy(0, -10);
+
+      // 7. 如果达到最高高度，则返回
+      if (maxHeight > 0 && maxHeight <= scrollHeight) {
+        console.log('已经达到最大高度!');
+        clearInterval(timer);
+        resolve();
+      }
+    }, 100);
+  });
+};
+```
+
+js代码你们不用管，直接CTRL cv即可
+
+代码完善：
+
+```python
+async def spider():
+  # 1. 启动一个浏览器
+  browser = await launch({'args': ['--no-sandbox', '--disable-setuid-sandbox']})
+  # 2. 新开浏览器的一个网页标签页
+  page = await browser.newPage()
+  # 3. 在新开的网页标签页中输入掘金地址
+  await page.goto('https://www.juejin.im')
+
+  await page.evaluate("""
+    上面JS滚动逻辑
+  """)
+
+  entrys = await page.querySelectorAll('ul.entryList li a.title')
+  titles = []
+  for entry in entrys:
+    text = await entry.getProperty('innerText')
+    title = await text.jsonValue()
+    titles.append(title)
+
+  print(titles)
+  await browser.close()
+```
+
+但是有的人有可能出现以下问题：
+
+是由于python里面bug导致的
+
+解决办法：
+
+```python
+def patch_pyppeteer():
+  import pyppeteer.connection
+  original_method = pyppeteer.connection.websockets.client.connect
+
+  def new_method(*args, **kwargs):
+    kwargs['ping_interval'] = None
+    kwargs['ping_timeout'] = None
+    return original_method(*args, **kwargs)
+
+  pyppeteer.connection.websockets.client.connect = new_method
+
+
+async def spider():
+  ...
+
+# 先调用修复BUG
+patch_pyppeteer()
+asyncio.get_event_loop().run_until_complete(spider())
+```
+
+更改这个设置就可以自运行了
+
+```python
+browser = await launch({
+    'headless': False,
+    'slowMo': 10,'
+    'devtools': True, #自动打开Chrome开发者工具
+    'args': ['--no-sandbox', '--disable-setuid-sandbox']})
+```
+最后pyppeteer那部分难度较大，感觉是复制粘贴的，如果大佬有什么好的意见或者建议都可以留言进行交流，或者发送邮箱到2455219437@qq.com给我，那部分有什么好的资料，大家可以相互交流
